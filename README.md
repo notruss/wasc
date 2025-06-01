@@ -15,5 +15,5 @@ For example to get audio playing on your super soundcard saved to record-output.
 {0.0.1.00000000}.{12345678-1234-1234-1234-123456789456} eCaptur "Recording Mixer"
 \-EXT(0xfffe), 32 b/sa, 2 ch, 8 B/frame, 44100 sa/s, float, 32 valid b/sa, ch mask=0x3, 2756 Kib/s
 
->wasc {0.0.0.00000000}.{12345678-1234-1234-1234-123456789012} | ffmpeg -f f32le -ac 2 -ar 48000 -i pipe:0 -c:a libmp3lame -b:a 256k record-output.mp3
+>wasc.exe {0.0.0.00000000}.{12345678-1234-1234-1234-123456789012} | ffmpeg -f f32le -ac 2 -ar 48000 -i pipe:0 -c:a libmp3lame -b:a 256k record-output.mp3
 ```
