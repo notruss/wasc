@@ -2,9 +2,9 @@
 WASC is Windows Audio Services (command line interface) Client.
 Simple command line interface utility for MS Windows to get raw audio data sent to playback audio endpoint device using WASAPI loopback feature.
 It is built using MinGW64 now, but code is trivial so any C compiler will do the job.
-Wasc.exe without parameters prints a list of endpoint audio devices with ID strings of kind {...} which are used to identify deices inside windows audio infrastructure following by stream format.
+Wasc.exe without parameters prints a list of endpoint audio devices with ID strings of kind {...} which are used to identify devices inside windows audio infrastructure following by stream format.
 Next just run wasc.exe {id-of-device} to get raw audio on it's stdout.
-For example to get audio playing on your super soundcard do...
+For example to get audio playing on your super soundcard saved to record-output.mp3 do...
 
 ## Usage/Examples
 
