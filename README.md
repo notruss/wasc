@@ -17,3 +17,5 @@ For example to get audio playing on your super soundcard saved to record-output.
 
 >wasc.exe {0.0.0.00000000}.{12345678-1234-1234-1234-123456789012} | ffmpeg -f f32le -ac 2 -ar 48000 -i pipe:0 -c:a libmp3lame -b:a 256k record-output.mp3
 ```
+## Poll driven transfer
+Since event driven transfer doesn't work on Windows 7(and others I guess) wasc has --poll option followed by number of milliseconds between buffer polls for data. This is not very reliable in practice since Win7 thread scheduler is not much aware about real time streams processing. So even having poll interval set like 1 ms one can have 20 or even 100 ms timeouts eventually loosing audio data. Use Win10+ and event driven transfer.
