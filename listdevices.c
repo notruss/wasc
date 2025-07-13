@@ -155,7 +155,7 @@ int listdevices(IMMDeviceCollection *pCollection)
 			char *pSubFormatStr;
 			
 			getwavesubformatstr(&pWFExtensible->SubFormat, &pSubFormatStr);
-			printf(", %s, %d valid b/sa, ch mask=0x%x", pSubFormatStr, pWFExtensible->Samples.wValidBitsPerSample, pWFExtensible->dwChannelMask);
+			printf(", %s, %d valid b/sa, ch_mask=0x%x", pSubFormatStr, pWFExtensible->Samples.wValidBitsPerSample, pWFExtensible->dwChannelMask);
 		}
 		printf(", %d Kib/s\n", (pWaveFormatEx->nAvgBytesPerSec * 8) / 1024);
 

@@ -17,6 +17,9 @@
 typedef struct
 {
 	unsigned int flags;
+	wchar_t *deviceidargv;
+	long int pollinterval; //buffer poll interval in ms
+	int errorarg; // invalid argument index
 } CMDLINEOPTIONS, *PCMDLINEOPTIONS;
 
 int listdevices(IMMDeviceCollection *);

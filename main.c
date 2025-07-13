@@ -22,18 +22,18 @@ int wmain(int argc, wchar_t **argv)
 	if(setmode(STDOUT_FILENO, O_BINARY) == -1 )
 	{
 		exitstatus= EXIT_ERROR;
-		LOGE("_setmode() failed");
+		LOGE("_setmode() on stdout failed");
 		goto exit_error_setmode;
 	}
 //
 // Get command line options
 //
-	CMDLINEOPTIONS cmdlineoptions;
+	CMDLINEOPTIONS cmdlineoptions={ 0 };
 	cmdlineoptions.flags= 0;
 	if(getoptions(argc, argv, &cmdlineoptions) != RETURN_OK)
 	{
 		exitstatus= EXIT_ERROR;
-		LOGE("getoptions() != RETURN_OK");
+		LOGE("getoptions() error on argument %d", cmdlineoptions.errorarg);
 		goto exit_error;
 	}
 	
@@ -89,7 +89,7 @@ int wmain(int argc, wchar_t **argv)
 // Get particular IMMDevice interface by endpoint id wchar string from cmdline
 //
 	IMMDevice *pDevice= NULL;
-	hresult= IMMDeviceEnumerator_GetDevice(pEnumerator, argv[1], &pDevice);
+	hresult= IMMDeviceEnumerator_GetDevice(pEnumerator, cmdlineoptions.deviceidargv, &pDevice);
 	if(hresult != S_OK)
 	{
 		exitstatus= EXIT_ERROR;
@@ -119,12 +119,39 @@ int wmain(int argc, wchar_t **argv)
 		LOGE("IAudioClient_GetMixFormat()= 0x%x", hresult);
 		goto exit_error_IAudioClient_GetMixFormat;
 	}
+//
+// Get device data flow direction to choose initialization flags
+//
+	EDataFlow devicedataflow;
+	if(getdevicedataflow(pDevice, &devicedataflow) != RETURN_OK)
+	{
+		exitstatus= EXIT_ERROR;
+		LOGE("getdevicedataflow() != RETURN_OK");
+		goto exit_error_getdevicedataflow;
+	}
 
+//
+// Choose AUDCLNT_ and AUDCLNT_STREAMFLAGS_ flags
+//
+	unsigned int audclnt_streamflags= 0;
+	
+
+	//event driven buffer management is the default
+	if(cmdlineoptions.pollinterval == 0)
+	{
+		audclnt_streamflags= audclnt_streamflags | AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+	}
+
+	//loopback flag is needed if we capturing a render device output
+	if(devicedataflow == eRender)
+	{
+		audclnt_streamflags= audclnt_streamflags | AUDCLNT_STREAMFLAGS_LOOPBACK;
+	}
 
 //
 // Initialize audio session with IAudioClient::Initialize
 //
-	hresult= IAudioClient_Initialize(pAudioClient, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK, 0, 0, pWaveFormatEx, NULL);
+	hresult= IAudioClient_Initialize(pAudioClient, AUDCLNT_SHAREMODE_SHARED, audclnt_streamflags, 0, 0, pWaveFormatEx, NULL);
 	if(hresult != S_OK)
 	{
 		exitstatus= EXIT_ERROR;
@@ -145,6 +172,7 @@ int wmain(int argc, wchar_t **argv)
 		goto exit_error_IAudioClient_GetBufferSize;
 	}
 	bufferdurationms= (NumBufferFrames * 1000) / pWaveFormatEx->nSamplesPerSec;
+	fprintf(stderr, "Buffer duration is %dms\n", bufferdurationms);
 	
 //
 // Initialize buffer with silence- calloc() zeroes buffer before returning the pointer.
@@ -157,7 +185,32 @@ int wmain(int argc, wchar_t **argv)
 		LOGE("calloc()=0, errno=%d", errno);
 		goto exit_error_calloc;
 	}
-	
+
+//
+// Create event object for buffer exchange
+//
+	HANDLE hEvent;
+	hEvent= CreateEventA(NULL, FALSE, FALSE, NULL);
+	if(hEvent == NULL)
+	{
+		exitstatus= EXIT_ERROR;
+		LOGE("CreateEventA() = NULL");
+		goto exit_error_CreateEvent;
+	}
+
+//
+// Set event handle for driving buffer if NOT poll transfer mode set by command line
+//
+	if(cmdlineoptions.pollinterval == 0)
+	{
+		hresult= IAudioClient_SetEventHandle(pAudioClient, hEvent);
+		if(hresult != S_OK)
+		{
+			exitstatus= EXIT_ERROR;
+			LOGE("IAudioClient_SetEventHandle()= 0x%x", hresult);
+			goto exit_error_IAudioClient_SetEventHandle;
+		}
+	}
 
 //
 // Get IAudioCaptureClient interface
@@ -182,9 +235,6 @@ int wmain(int argc, wchar_t **argv)
 		goto exit_error_IAudioClient_Start;
 	}
 	
-	// sleep interval between reading input in ms
-	int sleepdurationms= bufferdurationms / 3;
-
 //
 // Reading audiodata loop
 //
@@ -194,8 +244,35 @@ int wmain(int argc, wchar_t **argv)
 		BYTE *pData;
 		UINT32 NumFramesToRead;
 		DWORD dwFlags;
+		const DWORD waittimeout= cmdlineoptions.pollinterval ? cmdlineoptions.pollinterval : INFINITE ;
+		DWORD result;
 		
-		Sleep(sleepdurationms);
+		result= WaitForSingleObject(hEvent, waittimeout);
+
+/*
+		static LONGLONG llPerfCounterPrev=0;
+		LONGLONG llPerfCounterCurrent;
+		QueryPerformanceCounter((LARGE_INTEGER *) &llPerfCounterCurrent);
+		unsigned int interval= llPerfCounterCurrent - llPerfCounterPrev;
+		if(llPerfCounterPrev && interval > 0) LOGE("%ums", interval / 10000);
+		llPerfCounterPrev= llPerfCounterCurrent;
+*/
+
+		//event driven way is the default so timeout is legit for polling
+		if(result != WAIT_OBJECT_0)
+		{
+			if(result != WAIT_TIMEOUT)
+			{
+				//event is not signaled nor poll time came...this is the end beautiful friend...
+				exitstatus= EXIT_ERROR;
+				LOGE("WaitForSingleObject()= 0x%x", result);
+				goto exit_error_WaitForSingleObject;
+			}
+		}
+
+		//
+		//so here we have event signaled or poll time came
+		//
 		for(;;)
 		{
 			hresult= IAudioCaptureClient_GetBuffer(pAudioCaptureClient, &pData, &NumFramesToRead, &dwFlags, NULL, NULL);
@@ -247,6 +324,7 @@ int wmain(int argc, wchar_t **argv)
 exit_error_IAudioCaptureClient_ReleaseBuffer:
 exit_error_writeall:
 exit_error_IAudioCaptureClient_GetBuffer:
+exit_error_WaitForSingleObject:
 
 //
 // Stop stream
@@ -266,6 +344,15 @@ exit_error_IAudioClient_Start:
 //
 	IAudioCaptureClient_Release(pAudioCaptureClient);
 
+exit_error_IAudioClient_SetEventHandle:
+
+//
+// Close event handle
+//
+	CloseHandle(hEvent);
+
+exit_error_CreateEvent:
+
 //
 // Free silence buffer memory
 //
@@ -276,6 +363,7 @@ exit_error_IAudioClient_GetService:
 exit_error_calloc:
 exit_error_IAudioClient_GetBufferSize:
 exit_error_IAudioClient_Initialize:
+exit_error_getdevicedataflow:
 
 //
 // Free pWaveFormatEx mem
